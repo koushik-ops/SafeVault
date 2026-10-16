@@ -1,0 +1,24 @@
+# Production profile - uses AWS KMS for key management
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+# AWS KMS configuration
+kms:
+  provider: aws
+  aws:
+    region: ${AWS_REGION:us-east-1}
+    key-id: ${AWS_KMS_KEY_ID}
+    # AWS credentials should be provided via IAM roles, environment variables,
+    # or the default credential provider chain. Never hardcode credentials.
+
+# Production logging - no DEBUG, no sensitive data
+logging:
+  level:
+    com.securevault: INFO
+    org.springframework.security: WARN
+
+# Stricter CORS in production
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}

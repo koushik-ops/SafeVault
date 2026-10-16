@@ -1,0 +1,15 @@
+Backend:
+cd d:\CNSProj2\backend
+
+# Run all 13 security and cryptographic unit tests:
+.\mvnw.cmd test
+
+# Start the Spring Boot backend server on http://localhost:8080:
+.\mvnw.cmd spring-boot:run
+
+
+Frontend:
+cd d:\CNSProj2\frontend
+
+# Start the Vite React development server on http://localhost:5173:
+npm run dev
