@@ -45,9 +45,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-primary rounded-xl mb-4">
-            <Lock className="w-6 h-6 text-white" />
-          </div>
+          <img src="/logo.png" alt="SecureVault Logo" className="w-24 h-24 mx-auto object-contain drop-shadow-lg mb-3" />
           <h1 className="text-2xl font-bold text-text-primary">SecureVault</h1>
           <p className="text-sm text-text-secondary mt-1">AES-256 Encrypted Cloud Backup</p>
         </div>

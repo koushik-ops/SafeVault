@@ -60,12 +60,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center gap-3 px-6 py-5 border-b border-white/10">
-            <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
-              <Lock className="w-4 h-4 text-white" />
-            </div>
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+            <img src="/logo.png" alt="SecureVault Logo" className="w-10 h-10 object-contain drop-shadow-md" />
             <div>
-              <h1 className="text-base font-semibold">SecureVault</h1>
+              <h1 className="text-base font-semibold tracking-tight">SecureVault</h1>
               <p className="text-xs text-gray-400">AES Cloud Backup</p>
             </div>
             <button
