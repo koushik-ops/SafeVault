@@ -3,15 +3,6 @@ spring:
   config:
     activate:
       on-profile: dev
-  datasource:
-    url: ${DATABASE_URL:jdbc:h2:mem:securevault;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
-    username: ${DATABASE_USERNAME:sa}
-    password: ${DATABASE_PASSWORD:}
-  jpa:
-    hibernate:
-      ddl-auto: update
-  flyway:
-    enabled: false
 
 # Local key management for development only
 kms:

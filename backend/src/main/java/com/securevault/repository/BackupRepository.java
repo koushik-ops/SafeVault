@@ -4,9 +4,8 @@ import com.securevault.model.Backup;
 import com.securevault.model.BackupStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,13 +13,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface BackupRepository extends JpaRepository<Backup, UUID> {
+public interface BackupRepository extends MongoRepository<Backup, UUID> {
 
     /**
      * Find active backups for a specific owner and objectPath.
      */
-    @Query("SELECT b FROM Backup b WHERE b.ownerId = :ownerId AND b.objectPath = :objectPath AND b.status != 'DELETED'")
-    List<Backup> findActiveByOwnerIdAndObjectPath(@Param("ownerId") UUID ownerId, @Param("objectPath") String objectPath);
+    @Query("{ 'owner_id': ?0, 'object_path': ?1, 'status': { $ne: 'DELETED' } }")
+    List<Backup> findActiveByOwnerIdAndObjectPath(UUID ownerId, String objectPath);
 
     /**
      * Find all backups for a specific owner, ordered by creation date descending.
@@ -36,13 +35,9 @@ public interface BackupRepository extends JpaRepository<Backup, UUID> {
     /**
      * Search backups by filename for a specific owner.
      */
-    @Query("SELECT b FROM Backup b WHERE b.ownerId = :ownerId " +
-           "AND b.status != 'DELETED' " +
-           "AND LOWER(b.originalFilename) LIKE LOWER(CONCAT('%', :search, '%')) " +
-           "ORDER BY b.createdAt DESC")
-    Page<Backup> searchByFilename(@Param("ownerId") UUID ownerId,
-                                   @Param("search") String search,
-                                   Pageable pageable);
+    @Query(value = "{ 'owner_id': ?0, 'status': { $ne: 'DELETED' }, 'original_filename': { $regex: ?1, $options: 'i' } }",
+           sort = "{ 'created_at': -1 }")
+    Page<Backup> searchByFilename(UUID ownerId, String search, Pageable pageable);
 
     /**
      * Count backups for a specific owner (excluding deleted).
@@ -50,11 +45,18 @@ public interface BackupRepository extends JpaRepository<Backup, UUID> {
     long countByOwnerIdAndStatusNot(UUID ownerId, BackupStatus excludeStatus);
 
     /**
-     * Sum of original file sizes for a specific owner.
+     * Find all backups for a specific owner (excluding deleted) for calculations.
      */
-    @Query("SELECT COALESCE(SUM(b.encryptedSizeBytes), 0) FROM Backup b " +
-           "WHERE b.ownerId = :ownerId AND b.status != 'DELETED'")
-    long sumEncryptedSizeByOwnerId(@Param("ownerId") UUID ownerId);
+    List<Backup> findByOwnerIdAndStatusNot(UUID ownerId, BackupStatus excludeStatus);
+
+    /**
+     * Sum of encrypted file sizes for a specific owner.
+     */
+    default long sumEncryptedSizeByOwnerId(UUID ownerId) {
+        return findByOwnerIdAndStatusNot(ownerId, BackupStatus.DELETED).stream()
+                .mapToLong(b -> b.getEncryptedSizeBytes() != null ? b.getEncryptedSizeBytes() : 0L)
+                .sum();
+    }
 
     /**
      * Find the most recent backup for a specific owner.

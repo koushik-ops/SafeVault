@@ -1,62 +1,79 @@
 package com.securevault.model;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
-@Entity
-@Table(name = "backups")
+@Document(collection = "SecureVault")
+@CompoundIndexes({
+    @CompoundIndex(name = "idx_owner_created", def = "{'ownerId': 1, 'createdAt': -1}"),
+    @CompoundIndex(name = "idx_owner_path", def = "{'ownerId': 1, 'objectPath': 1}")
+})
 public class Backup {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "owner_id", nullable = false)
+    @Indexed
+    @Field("owner_id")
     private UUID ownerId;
 
-    @Column(name = "original_filename", nullable = false, length = 500)
+    @Field("original_filename")
     private String originalFilename;
 
-    @Column(name = "object_path", nullable = false, unique = true, length = 1000)
+    @Field("object_path")
     private String objectPath;
 
-    @Column(name = "original_size_bytes", nullable = false)
+    @Field("original_size_bytes")
     private Long originalSizeBytes;
 
-    @Column(name = "encrypted_size_bytes")
+    @Field("encrypted_size_bytes")
     private Long encryptedSizeBytes;
 
-    @Column(name = "mime_type", nullable = false, length = 255)
+    @Field("mime_type")
     private String mimeType;
 
-    @Column(name = "encryption_algorithm", nullable = false, length = 50)
+    @Field("encryption_algorithm")
     private String encryptionAlgorithm = "AES/GCM/NoPadding";
 
-    @Column(name = "format_version", nullable = false)
+    @Field("format_version")
     private Integer formatVersion = 1;
 
-    @Column(name = "nonce", nullable = false)
+    @Field("nonce")
     private byte[] nonce;
 
-    @Column(name = "authentication_tag")
+    @Field("authentication_tag")
     private byte[] authenticationTag;
 
-    @Column(name = "wrapped_dek", nullable = false)
+    @Field("wrapped_dek")
     private byte[] wrappedDek;
 
-    @Column(name = "kms_key_reference", nullable = false, length = 500)
+    @Field("kms_key_reference")
     private String kmsKeyReference;
 
-    @Column(name = "status", nullable = false, length = 50)
-    @Enumerated(EnumType.STRING)
+    @Indexed
+    @Field("status")
     private BackupStatus status = BackupStatus.COMPLETED;
 
-    @Column(name = "created_at", nullable = false)
-    private OffsetDateTime createdAt = OffsetDateTime.now();
+    /**
+     * Copy of the encrypted ciphertext stored directly in MongoDB alongside metadata.
+     */
+    @Field("encrypted_data")
+    private byte[] encryptedData;
 
-    @Column(name = "updated_at", nullable = false)
-    private OffsetDateTime updatedAt = OffsetDateTime.now();
+    @Field("created_at")
+    private Instant createdAt = Instant.now();
+
+    @Field("updated_at")
+    private Instant updatedAt = Instant.now();
 
     public Backup() {
     }
@@ -66,6 +83,16 @@ public class Backup {
                   String encryptionAlgorithm, Integer formatVersion, byte[] nonce,
                   byte[] authenticationTag, byte[] wrappedDek, String kmsKeyReference,
                   BackupStatus status, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+        this(id, ownerId, originalFilename, objectPath, originalSizeBytes, encryptedSizeBytes,
+             mimeType, encryptionAlgorithm, formatVersion, nonce, authenticationTag, wrappedDek,
+             kmsKeyReference, status, null, createdAt, updatedAt);
+    }
+
+    public Backup(UUID id, UUID ownerId, String originalFilename, String objectPath,
+                  Long originalSizeBytes, Long encryptedSizeBytes, String mimeType,
+                  String encryptionAlgorithm, Integer formatVersion, byte[] nonce,
+                  byte[] authenticationTag, byte[] wrappedDek, String kmsKeyReference,
+                  BackupStatus status, byte[] encryptedData, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         this.id = id;
         this.ownerId = ownerId;
         this.originalFilename = originalFilename;
@@ -80,13 +107,9 @@ public class Backup {
         this.wrappedDek = wrappedDek;
         this.kmsKeyReference = kmsKeyReference;
         this.status = status != null ? status : BackupStatus.COMPLETED;
-        this.createdAt = createdAt != null ? createdAt : OffsetDateTime.now();
-        this.updatedAt = updatedAt != null ? updatedAt : OffsetDateTime.now();
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        this.updatedAt = OffsetDateTime.now();
+        this.encryptedData = encryptedData;
+        this.createdAt = createdAt != null ? createdAt.toInstant() : Instant.now();
+        this.updatedAt = updatedAt != null ? updatedAt.toInstant() : Instant.now();
     }
 
     // Getters and Setters
@@ -202,20 +225,28 @@ public class Backup {
         this.status = status;
     }
 
+    public byte[] getEncryptedData() {
+        return encryptedData;
+    }
+
+    public void setEncryptedData(byte[] encryptedData) {
+        this.encryptedData = encryptedData;
+    }
+
     public OffsetDateTime getCreatedAt() {
-        return createdAt;
+        return createdAt != null ? createdAt.atOffset(ZoneOffset.UTC) : OffsetDateTime.now();
     }
 
     public void setCreatedAt(OffsetDateTime createdAt) {
-        this.createdAt = createdAt;
+        this.createdAt = createdAt != null ? createdAt.toInstant() : Instant.now();
     }
 
     public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
+        return updatedAt != null ? updatedAt.atOffset(ZoneOffset.UTC) : OffsetDateTime.now();
     }
 
     public void setUpdatedAt(OffsetDateTime updatedAt) {
-        this.updatedAt = updatedAt;
+        this.updatedAt = updatedAt != null ? updatedAt.toInstant() : Instant.now();
     }
 
     // Builder pattern implementation
@@ -238,6 +269,7 @@ public class Backup {
         private byte[] wrappedDek;
         private String kmsKeyReference;
         private BackupStatus status = BackupStatus.COMPLETED;
+        private byte[] encryptedData;
         private OffsetDateTime createdAt = OffsetDateTime.now();
         private OffsetDateTime updatedAt = OffsetDateTime.now();
 
@@ -311,6 +343,11 @@ public class Backup {
             return this;
         }
 
+        public Builder encryptedData(byte[] encryptedData) {
+            this.encryptedData = encryptedData;
+            return this;
+        }
+
         public Builder createdAt(OffsetDateTime createdAt) {
             this.createdAt = createdAt;
             return this;
@@ -325,7 +362,7 @@ public class Backup {
             return new Backup(id, ownerId, originalFilename, objectPath, originalSizeBytes,
                     encryptedSizeBytes, mimeType, encryptionAlgorithm, formatVersion,
                     nonce, authenticationTag, wrappedDek, kmsKeyReference, status,
-                    createdAt, updatedAt);
+                    encryptedData, createdAt, updatedAt);
         }
     }
 }

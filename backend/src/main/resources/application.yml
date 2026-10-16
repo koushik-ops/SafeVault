@@ -8,21 +8,10 @@ server:
 spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
-  datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/securevault}
-    username: ${DATABASE_USERNAME:postgres}
-    password: ${DATABASE_PASSWORD:postgres}
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-  jpa:
-    hibernate:
-      ddl-auto: update
-    open-in-view: false
-  flyway:
-    enabled: ${FLYWAY_ENABLED:false}
-    locations: classpath:db/migration
-    baseline-on-migrate: true
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/VaultProject}
+      database: VaultProject
 
 # Supabase configuration (defaults prevent startup failure when testing locally)
 supabase:

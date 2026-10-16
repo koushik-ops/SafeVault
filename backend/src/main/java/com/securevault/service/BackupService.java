@@ -14,8 +14,12 @@ import com.securevault.repository.BackupRepository;
 import com.securevault.storage.SupabaseStorageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,16 +40,46 @@ public class BackupService {
     private final KeyManagementService keyManagementService;
     private final SupabaseStorageService storageService;
 
+    @Nullable
+    private final MongoTemplate atlasMongoTemplate;
+
     public BackupService(
             BackupRepository backupRepository,
             AesGcmEncryptionService encryptionService,
             KeyManagementService keyManagementService,
             SupabaseStorageService storageService
     ) {
+        this(backupRepository, encryptionService, keyManagementService, storageService, null);
+    }
+
+    @Autowired
+    public BackupService(
+            BackupRepository backupRepository,
+            AesGcmEncryptionService encryptionService,
+            KeyManagementService keyManagementService,
+            SupabaseStorageService storageService,
+            @Autowired(required = false) @Qualifier("atlasMongoTemplate") @Nullable MongoTemplate atlasMongoTemplate
+    ) {
         this.backupRepository = backupRepository;
         this.encryptionService = encryptionService;
         this.keyManagementService = keyManagementService;
         this.storageService = storageService;
+        this.atlasMongoTemplate = atlasMongoTemplate;
+    }
+
+    /**
+     * Syncs a backup document to Atlas cloud MongoDB (fire-and-forget).
+     * Never blocks or fails the primary local operation.
+     */
+    private void syncToAtlas(Backup backup) {
+        if (atlasMongoTemplate != null) {
+            try {
+                atlasMongoTemplate.save(backup, "backups");
+                log.debug("Synced backup {} to Atlas cloud", backup.getId());
+            } catch (Exception e) {
+                log.warn("Atlas cloud sync failed for backup {} (non-fatal): {}", backup.getId(), e.getMessage());
+            }
+        }
     }
 
     /**
@@ -101,6 +135,7 @@ public class BackupService {
                 .wrappedDek(dataKey.wrappedDek())
                 .kmsKeyReference(dataKey.keyReference())
                 .status(BackupStatus.COMPLETED)
+                .encryptedData(encryptionResult.ciphertextWithTag())
                 .build();
 
         try {
@@ -109,9 +144,11 @@ public class BackupService {
             for (Backup prev : previous) {
                 prev.setStatus(BackupStatus.DELETED);
                 backupRepository.save(prev);
+                syncToAtlas(prev);
             }
 
             Backup saved = backupRepository.save(backup);
+            syncToAtlas(saved);
             log.info("Successfully created encrypted backup {} for user {}", saved.getId(), userId);
             return new UploadResponseDto(
                     saved.getId(),
@@ -158,7 +195,17 @@ public class BackupService {
     @Transactional(readOnly = true)
     public RestoredFile downloadEncrypted(UUID userId, UUID backupId) {
         Backup backup = getOwnedBackup(backupId, userId);
-        byte[] encryptedBytes = storageService.downloadEncryptedFile(backup.getObjectPath());
+        byte[] encryptedBytes;
+        try {
+            encryptedBytes = storageService.downloadEncryptedFile(backup.getObjectPath());
+        } catch (Exception ex) {
+            if (backup.getEncryptedData() != null && backup.getEncryptedData().length > 0) {
+                log.info("Cloud storage unavailable, retrieved encrypted file copy directly from MongoDB for {}", backupId);
+                encryptedBytes = backup.getEncryptedData();
+            } else {
+                throw ex;
+            }
+        }
         return new RestoredFile(
                 backup.getOriginalFilename() + ".enc",
                 "application/octet-stream",
@@ -174,8 +221,18 @@ public class BackupService {
     public RestoredFile restoreAndDecrypt(UUID userId, UUID backupId) {
         Backup backup = getOwnedBackup(backupId, userId);
 
-        // 1. Download encrypted ciphertext from Supabase Storage
-        byte[] encryptedBytes = storageService.downloadEncryptedFile(backup.getObjectPath());
+        // 1. Download encrypted ciphertext from Supabase Storage (with MongoDB copy fallback)
+        byte[] encryptedBytes;
+        try {
+            encryptedBytes = storageService.downloadEncryptedFile(backup.getObjectPath());
+        } catch (Exception ex) {
+            if (backup.getEncryptedData() != null && backup.getEncryptedData().length > 0) {
+                log.info("Cloud storage unavailable, restored from MongoDB encrypted file copy for {}", backupId);
+                encryptedBytes = backup.getEncryptedData();
+            } else {
+                throw ex;
+            }
+        }
 
         // 2. Unwrap DEK using KMS
         byte[] plaintextDek = keyManagementService.decryptDataKey(
@@ -215,6 +272,7 @@ public class BackupService {
         // Soft delete in database
         backup.setStatus(BackupStatus.DELETED);
         backupRepository.save(backup);
+        syncToAtlas(backup);
         log.info("Deleted backup {} for user {}", backupId, userId);
     }
 
